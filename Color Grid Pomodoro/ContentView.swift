@@ -1,5 +1,5 @@
-import SwiftUI
 import Combine
+import SwiftUI
 
 // Hex initializer
 extension Color {
@@ -28,8 +28,13 @@ let modeNames = [
 struct ContentView: View {
   @State private var elapsedTime: TimeInterval = 0
   @State private var isRunning = false
+  @State private var isBreakMode = false
 
-  let timerDuration: TimeInterval = 25 * 60  // 25 minutes
+  let focusDuration: TimeInterval = 25 * 60
+  let breakDuration: TimeInterval = 5 * 60
+  var currentDuration: TimeInterval {
+    isBreakMode ? breakDuration : focusDuration
+  }
 
   let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -44,20 +49,20 @@ struct ContentView: View {
   var body: some View {
     ZStack {
       // Background Grid Layer
-      ColorGrid(modeIndex: modeIndex, baseIndex: baseIndex)
+      ColorGrid(modeIndex: modeIndex, baseIndex: baseIndex, isBreakMode: isBreakMode)
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 3), value: modeIndex)
         .animation(.easeInOut(duration: 3), value: baseIndex)
 
       // Central Info Layer
       VStack(spacing: 4) {
-        let remaining = max(0, Int(timerDuration - elapsedTime))
+        let remaining = max(0, Int(currentDuration - elapsedTime))
         Text("\(remaining / 60):\(String(format: "%02d", remaining % 60))")
           .font(.system(size: 64, weight: .ultraLight, design: .rounded))
           .foregroundColor(.white)
           .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
 
-        Text(modeNames[modeIndex])
+        Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
           .font(.system(size: 14, weight: .medium, design: .monospaced))
           .foregroundColor(.white.opacity(0.8))
           .tracking(4)
@@ -78,10 +83,10 @@ struct ContentView: View {
     }
     .onReceive(timer) { input in
       if isRunning {
-        if elapsedTime < timerDuration {
+        if elapsedTime < currentDuration {
           elapsedTime += 1
         } else {
-          isRunning = false
+          isBreakMode.toggle()
           elapsedTime = 0
         }
       }
@@ -92,6 +97,7 @@ struct ContentView: View {
     .onLongPressGesture {
       withAnimation(.easeInOut(duration: 1)) {
         isRunning = false
+        isBreakMode = false
         elapsedTime = 0
       }
     }
@@ -101,6 +107,7 @@ struct ContentView: View {
 struct ColorGrid: View {
   let modeIndex: Int
   let baseIndex: Int
+  let isBreakMode: Bool
 
   var body: some View {
     Group {
@@ -151,6 +158,9 @@ struct ColorGrid: View {
 
   private func getColor(_ index: Int) -> Color {
     let normalizedIndex = (index % 12 + 12) % 12
+    if isBreakMode {
+      return Color(white: 0.2 + 0.6 * Double(normalizedIndex) / 11.0)
+    }
     return hues[normalizedIndex]
   }
 }
