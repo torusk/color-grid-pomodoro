@@ -1,6 +1,6 @@
+import AudioToolbox
 import Combine
 import SwiftUI
-import AudioToolbox
 
 // Hex initializer
 extension Color {
@@ -59,6 +59,18 @@ struct ContentView: View {
     generator.notificationOccurred(.success)
   }
 
+  private func timeText(_ text: String, size: CGFloat) -> some View {
+    Text(text)
+      .font(.system(size: size, weight: .bold, design: .rounded))
+      .foregroundStyle(.ultraThinMaterial)
+      .overlay(
+        Text(text)
+          .font(.system(size: size, weight: .bold, design: .rounded))
+          .foregroundColor(.white.opacity(0.85))
+          .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 8)
+      )
+  }
+
   var body: some View {
     ZStack {
       // Background Grid Layer
@@ -68,31 +80,69 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 3), value: baseIndex)
 
       // Central Info Layer
-      VStack(spacing: 4) {
+      GeometryReader { geo in
         let remaining = max(0, Int(currentDuration - elapsedTime))
-        Text("\(remaining / 60):\(String(format: "%02d", remaining % 60))")
-          .font(.system(size: 64, weight: .ultraLight, design: .rounded))
-          .foregroundColor(.white)
-          .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+        let minutes = remaining / 60
+        let seconds = remaining % 60
+        let isPortrait = geo.size.height > geo.size.width
+        let minDim = min(geo.size.width, geo.size.height)
+        let fontSize = minDim * 0.45
 
-        Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
-          .font(.system(size: 14, weight: .medium, design: .monospaced))
-          .foregroundColor(.white.opacity(0.8))
-          .tracking(4)
+        ZStack {
+          if isPortrait {
+            VStack(spacing: 0) {
+              ZStack {
+                timeText("\(minutes)", size: fontSize)
+              }
+              .frame(width: geo.size.width, height: geo.size.height * 0.5)
 
+              ZStack {
+                timeText("\(String(format: "%02d", seconds))", size: fontSize)
+              }
+              .frame(width: geo.size.width, height: geo.size.height * 0.5)
+            }
+
+            HStack(spacing: minDim * 0.06) {
+              Circle().fill(Color.white.opacity(0.9)).frame(
+                width: minDim * 0.04, height: minDim * 0.04)
+              Circle().fill(Color.white.opacity(0.9)).frame(
+                width: minDim * 0.04, height: minDim * 0.04)
+            }
+            .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 4)
+
+          } else {
+            HStack(spacing: 0) {
+              ZStack {
+                timeText("\(minutes)", size: fontSize)
+              }
+              .frame(width: geo.size.width * 0.5, height: geo.size.height)
+
+              ZStack {
+                timeText("\(String(format: "%02d", seconds))", size: fontSize)
+              }
+              .frame(width: geo.size.width * 0.5, height: geo.size.height)
+            }
+
+            VStack(spacing: minDim * 0.06) {
+              Circle().fill(Color.white.opacity(0.9)).frame(
+                width: minDim * 0.04, height: minDim * 0.04)
+              Circle().fill(Color.white.opacity(0.9)).frame(
+                width: minDim * 0.04, height: minDim * 0.04)
+            }
+            .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 4)
+          }
+
+          VStack {
+            Spacer()
+            Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
+              .font(.system(size: 14, weight: .medium, design: .monospaced))
+              .foregroundColor(.white.opacity(0.8))
+              .tracking(4)
+              .padding(.bottom, 60)
+          }
+        }
       }
-      .padding(32)
-      .background(.ultraThinMaterial)
-      .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-      .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
-
-      if !isRunning && elapsedTime == 0 {
-        Text("TAP TO START")
-          .font(.caption)
-          .foregroundColor(.white)
-          .padding(.top, 240)
-          .opacity(0.6)
-      }
+      .ignoresSafeArea()
     }
     .onReceive(timer) { input in
       if isRunning {
