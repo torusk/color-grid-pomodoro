@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import AudioToolbox
 
 // Hex initializer
 extension Color {
@@ -46,6 +47,18 @@ struct ContentView: View {
     Int(elapsedTime / 25) % 12
   }
 
+  private func playAlarmSound() {
+    // Use a simple built-in system sound. 1007 is a short "Tink"-like tone.
+    let soundID: SystemSoundID = 1007
+    AudioServicesPlaySystemSound(soundID)
+  }
+
+  private func triggerHaptics() {
+    let generator = UINotificationFeedbackGenerator()
+    generator.prepare()
+    generator.notificationOccurred(.success)
+  }
+
   var body: some View {
     ZStack {
       // Background Grid Layer
@@ -88,6 +101,8 @@ struct ContentView: View {
         } else {
           isBreakMode.toggle()
           elapsedTime = 0
+          playAlarmSound()
+          triggerHaptics()
         }
       }
     }
