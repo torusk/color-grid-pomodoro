@@ -23,13 +23,17 @@ let hues: [Color] = [
 ]
 
 let modeNames = [
-  "COMPLEMENTARY", "SPLIT COMP", "TRIADIC", "TETRADIC", "ANALOGOUS",
+  "COMPLEMENTARY", "ANALOGOUS", "TRIADIC", "SPLIT COMP", "TETRADIC",
 ]
 
 struct ContentView: View {
   @State private var elapsedTime: TimeInterval = 0
   @State private var isRunning = false
   @State private var isBreakMode = false
+  @State private var completedPomodoros: Int = 0
+  @State private var taskName: String = ""
+  @State private var showTaskInput = false
+  @State private var taskInputDraft: String = ""
 
   let focusDuration: TimeInterval = 25 * 60
   let breakDuration: TimeInterval = 5 * 60
@@ -48,7 +52,6 @@ struct ContentView: View {
   }
 
   private func playAlarmSound() {
-    // Use a simple built-in system sound. 1007 is a short "Tink"-like tone.
     let soundID: SystemSoundID = 1007
     AudioServicesPlaySystemSound(soundID)
   }
@@ -132,23 +135,52 @@ struct ContentView: View {
             .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 4)
           }
 
+          // Bottom info: task name + mode label + pomodoro dots
           VStack {
             Spacer()
-            Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
-              .font(.system(size: 14, weight: .medium, design: .monospaced))
-              .foregroundColor(.white.opacity(0.8))
-              .tracking(4)
-              .padding(.bottom, 60)
+            VStack(spacing: 8) {
+              if !taskName.isEmpty {
+                Text(taskName)
+                  .font(.system(size: 13, weight: .medium, design: .monospaced))
+                  .foregroundColor(.white.opacity(0.75))
+                  .tracking(2)
+                  .lineLimit(1)
+                  .truncationMode(.tail)
+              }
+              Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundColor(.white.opacity(0.8))
+                .tracking(4)
+              if completedPomodoros > 0 {
+                HStack(spacing: 6) {
+                  ForEach(0..<min(completedPomodoros, 8), id: \.self) { _ in
+                    Circle()
+                      .fill(Color.white.opacity(0.85))
+                      .frame(width: 6, height: 6)
+                  }
+                  if completedPomodoros > 8 {
+                    Text("+\(completedPomodoros - 8)")
+                      .font(.system(size: 11, weight: .medium, design: .monospaced))
+                      .foregroundColor(.white.opacity(0.75))
+                  }
+                }
+                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+              }
+            }
+            .padding(.bottom, 52)
           }
         }
       }
       .ignoresSafeArea()
     }
-    .onReceive(timer) { input in
+    .onReceive(timer) { _ in
       if isRunning {
         if elapsedTime < currentDuration {
           elapsedTime += 1
         } else {
+          if !isBreakMode {
+            completedPomodoros += 1
+          }
           isBreakMode.toggle()
           elapsedTime = 0
           playAlarmSound()
@@ -164,8 +196,69 @@ struct ContentView: View {
         isRunning = false
         isBreakMode = false
         elapsedTime = 0
+        completedPomodoros = 0
       }
     }
+    .gesture(
+      DragGesture(minimumDistance: 40, coordinateSpace: .local)
+        .onEnded { value in
+          if value.translation.height < -40 {
+            taskInputDraft = taskName
+            showTaskInput = true
+          }
+        }
+    )
+    .sheet(isPresented: $showTaskInput) {
+      TaskInputSheet(taskName: $taskName, draft: $taskInputDraft)
+        .presentationDetents([.height(220)])
+        .presentationDragIndicator(.visible)
+    }
+  }
+}
+
+struct TaskInputSheet: View {
+  @Binding var taskName: String
+  @Binding var draft: String
+  @Environment(\.dismiss) private var dismiss
+  @FocusState private var isFocused: Bool
+
+  var body: some View {
+    VStack(spacing: 24) {
+      Text("CURRENT TASK")
+        .font(.system(size: 12, weight: .medium, design: .monospaced))
+        .foregroundColor(.secondary)
+        .tracking(4)
+
+      TextField("What are you working on?", text: $draft)
+        .font(.system(size: 18, weight: .medium, design: .rounded))
+        .multilineTextAlignment(.center)
+        .focused($isFocused)
+        .submitLabel(.done)
+        .onSubmit {
+          taskName = draft.trimmingCharacters(in: .whitespaces)
+          dismiss()
+        }
+
+      HStack(spacing: 20) {
+        Button("Clear") {
+          draft = ""
+          taskName = ""
+          dismiss()
+        }
+        .font(.system(size: 15, weight: .medium, design: .rounded))
+        .foregroundColor(.secondary)
+
+        Button("Set") {
+          taskName = draft.trimmingCharacters(in: .whitespaces)
+          dismiss()
+        }
+        .font(.system(size: 15, weight: .semibold, design: .rounded))
+        .buttonStyle(.borderedProminent)
+        .tint(.black.opacity(0.8))
+      }
+    }
+    .padding(32)
+    .onAppear { isFocused = true }
   }
 }
 
@@ -183,12 +276,10 @@ struct ColorGrid: View {
         }
         .transition(.opacity)
       } else if modeIndex == 1 {
-        VStack(spacing: 0) {
+        HStack(spacing: 0) {
           getColor(baseIndex)
-          HStack(spacing: 0) {
-            getColor(baseIndex + 5)
-            getColor(baseIndex + 7)
-          }
+          getColor(baseIndex + 1)
+          getColor(baseIndex + 11)
         }
         .transition(.opacity)
       } else if modeIndex == 2 {
@@ -200,6 +291,15 @@ struct ColorGrid: View {
         .transition(.opacity)
       } else if modeIndex == 3 {
         VStack(spacing: 0) {
+          getColor(baseIndex)
+          HStack(spacing: 0) {
+            getColor(baseIndex + 5)
+            getColor(baseIndex + 7)
+          }
+        }
+        .transition(.opacity)
+      } else {
+        VStack(spacing: 0) {
           HStack(spacing: 0) {
             getColor(baseIndex)
             getColor(baseIndex + 2)
@@ -208,13 +308,6 @@ struct ColorGrid: View {
             getColor(baseIndex + 6)
             getColor(baseIndex + 8)
           }
-        }
-        .transition(.opacity)
-      } else {
-        HStack(spacing: 0) {
-          getColor(baseIndex)
-          getColor(baseIndex + 1)
-          getColor(baseIndex + 11)
         }
         .transition(.opacity)
       }
