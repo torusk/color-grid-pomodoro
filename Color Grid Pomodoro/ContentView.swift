@@ -135,22 +135,35 @@ struct ContentView: View {
             .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 4)
           }
 
-          // Bottom info: task name + mode label + pomodoro dots
+          // Bottom info: task + mode label + pomodoro dots
           VStack {
             Spacer()
             VStack(spacing: 8) {
-              if !taskName.isEmpty {
-                Text(taskName)
-                  .font(.system(size: 13, weight: .medium, design: .monospaced))
-                  .foregroundColor(.white.opacity(0.75))
-                  .tracking(2)
-                  .lineLimit(1)
-                  .truncationMode(.tail)
+              // Task button: タップで編集、未設定時は "+ TASK" を表示
+              Button {
+                taskInputDraft = taskName
+                showTaskInput = true
+              } label: {
+                if taskName.isEmpty {
+                  Text("+ TASK")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.45))
+                    .tracking(3)
+                } else {
+                  Text(taskName)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.75))
+                    .tracking(2)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                }
               }
+
               Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
                 .font(.system(size: 14, weight: .medium, design: .monospaced))
                 .foregroundColor(.white.opacity(0.8))
                 .tracking(4)
+
               if completedPomodoros > 0 {
                 HStack(spacing: 6) {
                   ForEach(0..<min(completedPomodoros, 8), id: \.self) { _ in
@@ -199,15 +212,6 @@ struct ContentView: View {
         completedPomodoros = 0
       }
     }
-    .gesture(
-      DragGesture(minimumDistance: 40, coordinateSpace: .local)
-        .onEnded { value in
-          if value.translation.height < -40 {
-            taskInputDraft = taskName
-            showTaskInput = true
-          }
-        }
-    )
     .sheet(isPresented: $showTaskInput) {
       TaskInputSheet(taskName: $taskName, draft: $taskInputDraft)
         .presentationDetents([.height(220)])
