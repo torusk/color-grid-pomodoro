@@ -138,42 +138,51 @@ struct ContentView: View {
           // Bottom info: task + mode label + pomodoro dots
           VStack {
             Spacer()
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
               // Task button: タップで編集、未設定時は "+ TASK" を表示
               Button {
                 taskInputDraft = taskName
                 showTaskInput = true
               } label: {
                 if taskName.isEmpty {
-                  Text("+ TASK")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.45))
-                    .tracking(3)
+                  HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                      .font(.system(size: 16, weight: .semibold))
+                    Text("TASK")
+                      .font(.system(size: 16, weight: .semibold, design: .rounded))
+                      .tracking(3)
+                  }
+                  .foregroundColor(.white.opacity(0.65))
+                  .padding(.horizontal, 20)
+                  .padding(.vertical, 8)
+                  .background(Color.white.opacity(0.15))
+                  .clipShape(Capsule())
                 } else {
                   Text(taskName)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.75))
-                    .tracking(2)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.95))
+                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .padding(.horizontal, 24)
                 }
               }
 
               Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
-                .font(.system(size: 14, weight: .medium, design: .monospaced))
-                .foregroundColor(.white.opacity(0.8))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundColor(.white.opacity(0.6))
                 .tracking(4)
 
               if completedPomodoros > 0 {
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                   ForEach(0..<min(completedPomodoros, 8), id: \.self) { _ in
                     Circle()
                       .fill(Color.white.opacity(0.85))
-                      .frame(width: 6, height: 6)
+                      .frame(width: 7, height: 7)
                   }
                   if completedPomodoros > 8 {
                     Text("+\(completedPomodoros - 8)")
-                      .font(.system(size: 11, weight: .medium, design: .monospaced))
+                      .font(.system(size: 12, weight: .medium, design: .monospaced))
                       .foregroundColor(.white.opacity(0.75))
                   }
                 }
