@@ -1,8 +1,10 @@
 import AudioToolbox
 import Combine
 import SwiftUI
+import UserNotifications
 
-// Hex initializer
+// MARK: - Color Hex Extension
+
 extension Color {
   init(hex: UInt, alpha: Double = 1) {
     self.init(
@@ -26,38 +28,135 @@ let modeNames = [
   "COMPLEMENTARY", "SPLIT COMP", "TRIADIC", "TETRADIC", "ANALOGOUS",
 ]
 
+// MARK: - ContentView
+
 struct ContentView: View {
+  @Environment(\.scenePhase) private var scenePhase
+  @AppStorage("focusMinutes") private var focusMinutes: Int = 25
+  @AppStorage("breakMinutes") private var breakMinutes: Int = 5
+
   @State private var elapsedTime: TimeInterval = 0
   @State private var isRunning = false
   @State private var isBreakMode = false
+  @State private var completedPomodoros: Int = 0
+  @State private var showSettings = false
+  @State private var backgroundedAt: Date? = nil
+  @State private var notificationPermissionGranted = false
 
-  let focusDuration: TimeInterval = 25 * 60
-  let breakDuration: TimeInterval = 5 * 60
-  var currentDuration: TimeInterval {
-    isBreakMode ? breakDuration : focusDuration
-  }
+  private var focusDuration: TimeInterval { TimeInterval(focusMinutes * 60) }
+  private var breakDuration: TimeInterval { TimeInterval(breakMinutes * 60) }
+  private var currentDuration: TimeInterval { isBreakMode ? breakDuration : focusDuration }
 
   let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
   var modeIndex: Int {
-    min(Int(elapsedTime / 300), 4)
+    let interval = focusDuration / 5
+    return min(Int(elapsedTime / interval), 4)
   }
 
   var baseIndex: Int {
     Int(elapsedTime / 25) % 12
   }
 
+  // MARK: - Notifications
+
+  private func checkNotificationPermission() {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      DispatchQueue.main.async {
+        notificationPermissionGranted = settings.authorizationStatus == .authorized
+      }
+    }
+  }
+
+  private func requestNotificationPermission() {
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) {
+      granted, _ in
+      DispatchQueue.main.async {
+        notificationPermissionGranted = granted
+      }
+    }
+  }
+
+  private func scheduleNotification() {
+    guard notificationPermissionGranted else { return }
+    UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+    let remaining = currentDuration - elapsedTime
+    guard remaining > 0 else { return }
+
+    let content = UNMutableNotificationContent()
+    if isBreakMode {
+      content.title = "Break over!"
+      content.body = "Time to focus."
+    } else {
+      content.title = "Focus complete!"
+      content.body = "Well done. Time for a break."
+    }
+    content.sound = .default
+
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: remaining, repeats: false)
+    let request = UNNotificationRequest(identifier: "session-end", content: content, trigger: trigger)
+    UNUserNotificationCenter.current().add(request)
+  }
+
+  private func cancelNotification() {
+    UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+  }
+
+  // MARK: - Background Sync
+
+  private func advanceTimer(by seconds: TimeInterval) {
+    var remaining = seconds
+    while remaining > 0 {
+      let timeLeft = currentDuration - elapsedTime
+      if remaining < timeLeft {
+        elapsedTime += remaining
+        remaining = 0
+      } else {
+        remaining -= timeLeft
+        if !isBreakMode {
+          completedPomodoros += 1
+          savePomodoros()
+        }
+        isBreakMode.toggle()
+        elapsedTime = 0
+      }
+    }
+  }
+
+  // MARK: - Persistence
+
+  private func loadSavedData() {
+    let today = Calendar.current.startOfDay(for: Date())
+    if let saved = UserDefaults.standard.object(forKey: "pomodoroDate") as? Date,
+      Calendar.current.isDate(saved, inSameDayAs: today)
+    {
+      completedPomodoros = UserDefaults.standard.integer(forKey: "completedPomodoros")
+    } else {
+      completedPomodoros = 0
+      UserDefaults.standard.set(today, forKey: "pomodoroDate")
+      UserDefaults.standard.set(0, forKey: "completedPomodoros")
+    }
+  }
+
+  private func savePomodoros() {
+    UserDefaults.standard.set(completedPomodoros, forKey: "completedPomodoros")
+    let today = Calendar.current.startOfDay(for: Date())
+    UserDefaults.standard.set(today, forKey: "pomodoroDate")
+  }
+
+  // MARK: - Sound & Haptics
+
   private func playAlarmSound() {
-    // Use a simple built-in system sound. 1007 is a short "Tink"-like tone.
-    let soundID: SystemSoundID = 1007
-    AudioServicesPlaySystemSound(soundID)
+    AudioServicesPlaySystemSound(1007)
   }
 
   private func triggerHaptics() {
-    let generator = UINotificationFeedbackGenerator()
-    generator.prepare()
-    generator.notificationOccurred(.success)
+    let g = UINotificationFeedbackGenerator()
+    g.prepare()
+    g.notificationOccurred(.success)
   }
+
+  // MARK: - Helpers
 
   private func timeText(_ text: String, size: CGFloat) -> some View {
     Text(text)
@@ -71,15 +170,17 @@ struct ContentView: View {
       )
   }
 
+  // MARK: - Body
+
   var body: some View {
     ZStack {
-      // Background Grid Layer
+      // Background
       ColorGrid(modeIndex: modeIndex, baseIndex: baseIndex, isBreakMode: isBreakMode)
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 3), value: modeIndex)
         .animation(.easeInOut(duration: 3), value: baseIndex)
 
-      // Central Info Layer
+      // Timer display
       GeometryReader { geo in
         let remaining = max(0, Int(currentDuration - elapsedTime))
         let minutes = remaining / 60
@@ -91,73 +192,131 @@ struct ContentView: View {
         ZStack {
           if isPortrait {
             VStack(spacing: 0) {
-              ZStack {
-                timeText("\(minutes)", size: fontSize)
-              }
-              .frame(width: geo.size.width, height: geo.size.height * 0.5)
-
-              ZStack {
-                timeText("\(String(format: "%02d", seconds))", size: fontSize)
-              }
-              .frame(width: geo.size.width, height: geo.size.height * 0.5)
+              ZStack { timeText("\(minutes)", size: fontSize) }
+                .frame(width: geo.size.width, height: geo.size.height * 0.5)
+              ZStack { timeText(String(format: "%02d", seconds), size: fontSize) }
+                .frame(width: geo.size.width, height: geo.size.height * 0.5)
             }
-
             HStack(spacing: minDim * 0.06) {
-              Circle().fill(Color.white.opacity(0.9)).frame(
-                width: minDim * 0.04, height: minDim * 0.04)
-              Circle().fill(Color.white.opacity(0.9)).frame(
-                width: minDim * 0.04, height: minDim * 0.04)
+              Circle().fill(Color.white.opacity(0.9))
+                .frame(width: minDim * 0.04, height: minDim * 0.04)
+              Circle().fill(Color.white.opacity(0.9))
+                .frame(width: minDim * 0.04, height: minDim * 0.04)
             }
             .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 4)
-
           } else {
             HStack(spacing: 0) {
-              ZStack {
-                timeText("\(minutes)", size: fontSize)
-              }
-              .frame(width: geo.size.width * 0.5, height: geo.size.height)
-
-              ZStack {
-                timeText("\(String(format: "%02d", seconds))", size: fontSize)
-              }
-              .frame(width: geo.size.width * 0.5, height: geo.size.height)
+              ZStack { timeText("\(minutes)", size: fontSize) }
+                .frame(width: geo.size.width * 0.5, height: geo.size.height)
+              ZStack { timeText(String(format: "%02d", seconds), size: fontSize) }
+                .frame(width: geo.size.width * 0.5, height: geo.size.height)
             }
-
             VStack(spacing: minDim * 0.06) {
-              Circle().fill(Color.white.opacity(0.9)).frame(
-                width: minDim * 0.04, height: minDim * 0.04)
-              Circle().fill(Color.white.opacity(0.9)).frame(
-                width: minDim * 0.04, height: minDim * 0.04)
+              Circle().fill(Color.white.opacity(0.9))
+                .frame(width: minDim * 0.04, height: minDim * 0.04)
+              Circle().fill(Color.white.opacity(0.9))
+                .frame(width: minDim * 0.04, height: minDim * 0.04)
             }
             .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 4)
           }
 
+          // Bottom info
           VStack {
             Spacer()
-            Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
-              .font(.system(size: 14, weight: .medium, design: .monospaced))
-              .foregroundColor(.white.opacity(0.8))
-              .tracking(4)
-              .padding(.bottom, 60)
+            VStack(spacing: 8) {
+              // Mode name
+              Text(isBreakMode ? "BREAK TIME" : modeNames[modeIndex])
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(.white.opacity(0.55))
+                .tracking(4)
+
+              // Pomodoro count
+              if completedPomodoros > 0 {
+                HStack(spacing: 6) {
+                  ForEach(0..<min(completedPomodoros, 8), id: \.self) { _ in
+                    Circle().fill(Color.white.opacity(0.75))
+                      .frame(width: 6, height: 6)
+                  }
+                  if completedPomodoros > 8 {
+                    Text("+\(completedPomodoros - 8)")
+                      .font(.system(size: 11, weight: .medium, design: .monospaced))
+                      .foregroundColor(.white.opacity(0.55))
+                  }
+                }
+                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+              }
+            }
+            .padding(.bottom, 52)
+          }
+
+          // Settings button (top-right)
+          VStack {
+            HStack {
+              Spacer()
+              Button {
+                showSettings = true
+              } label: {
+                Image(systemName: "gearshape")
+                  .font(.system(size: 18, weight: .medium))
+                  .foregroundColor(.white.opacity(0.5))
+                  .frame(width: 44, height: 44)
+              }
+              .accessibilityLabel("Settings")
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 12)
+            Spacer()
           }
         }
       }
       .ignoresSafeArea()
     }
-    .onReceive(timer) { input in
-      if isRunning {
-        if elapsedTime < currentDuration {
-          elapsedTime += 1
-        } else {
-          isBreakMode.toggle()
-          elapsedTime = 0
-          playAlarmSound()
-          triggerHaptics()
+    .onAppear {
+      checkNotificationPermission()
+      loadSavedData()
+    }
+    .onChange(of: scenePhase) { _, newPhase in
+      switch newPhase {
+      case .background:
+        if isRunning {
+          backgroundedAt = Date()
+          scheduleNotification()
         }
+      case .active:
+        if isRunning, let bg = backgroundedAt {
+          advanceTimer(by: Date().timeIntervalSince(bg))
+          backgroundedAt = nil
+          cancelNotification()
+          if isRunning { scheduleNotification() }
+        }
+        checkNotificationPermission()
+      default:
+        break
+      }
+    }
+    .onReceive(timer) { _ in
+      guard isRunning else { return }
+      if elapsedTime < currentDuration {
+        elapsedTime += 1
+      } else {
+        if !isBreakMode {
+          completedPomodoros += 1
+          savePomodoros()
+        }
+        isBreakMode.toggle()
+        elapsedTime = 0
+        playAlarmSound()
+        triggerHaptics()
+        scheduleNotification()
       }
     }
     .onTapGesture {
+      // Request notification permission on first tap (contextual)
+      if !notificationPermissionGranted {
+        requestNotificationPermission()
+      }
       isRunning.toggle()
+      isRunning ? scheduleNotification() : cancelNotification()
     }
     .onLongPressGesture {
       withAnimation(.easeInOut(duration: 1)) {
@@ -165,9 +324,17 @@ struct ContentView: View {
         isBreakMode = false
         elapsedTime = 0
       }
+      cancelNotification()
+    }
+    .sheet(isPresented: $showSettings) {
+      SettingsView()
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
   }
 }
+
+// MARK: - ColorGrid
 
 struct ColorGrid: View {
   let modeIndex: Int
@@ -222,11 +389,8 @@ struct ColorGrid: View {
   }
 
   private func getColor(_ index: Int) -> Color {
-    let normalizedIndex = (index % 12 + 12) % 12
-    if isBreakMode {
-      return Color(white: 0.2 + 0.6 * Double(normalizedIndex) / 11.0)
-    }
-    return hues[normalizedIndex]
+    let i = (index % 12 + 12) % 12
+    return isBreakMode ? Color(white: 0.2 + 0.6 * Double(i) / 11.0) : hues[i]
   }
 }
 
